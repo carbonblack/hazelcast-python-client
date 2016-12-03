@@ -1,7 +1,8 @@
 import binascii
 import cPickle
 from datetime import datetime
-from time import time
+import time
+import calendar
 
 from bits import *
 from hazelcast.serialization.api import StreamSerializer
@@ -227,7 +228,8 @@ class DateTimeSerializer(BaseSerializer):
         return datetime.fromtimestamp(long_time / 1000.0)
 
     def write(self, out, obj):
-        long_time = long(time.mktime(obj.timetuple()))
+        # hazelcast node seems to want this in milliseconds
+        long_time = long((calendar.timegm(obj.utctimetuple()) + (obj.microsecond/1000000.)) * 1000)
         out.write_long(long_time)
 
     def get_type_id(self):
