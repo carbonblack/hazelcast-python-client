@@ -885,7 +885,7 @@ class MapFeatNearCache(Map):
     """
     def __init__(self, client, service_name, name):
         super(MapFeatNearCache, self).__init__(client, service_name, name)
-        near_cache_config = client.config.near_cache_configs.get(name, None)
+        near_cache_config = client.config.get_near_cache_config(name)
         if near_cache_config is None:
             raise ValueError("NearCache config cannot be None here!")
         self._invalidation_listener_id = None
@@ -1061,7 +1061,8 @@ def create_near_cache(serialization_service, near_cache_config):
 
 
 def create_map_proxy(client, service_name, name, **kwargs):
-    near_cache_config = client.config.near_cache_configs.get(name, None)
+    near_cache_config = client.config.get_near_cache_config(name)
+
     if near_cache_config is None:
         return Map(client=client, service_name=service_name, name=name)
     else:
