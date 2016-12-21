@@ -129,7 +129,7 @@ class GeventConnection(Connection):
                     self.close(IOError(e))
                     return
 
-            gevent.sleep(0)
+            gevent.sleep(0.1)
 
     def readable(self):
         return not self._closed and self.sent_protocol_bytes
