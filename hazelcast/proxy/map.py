@@ -922,7 +922,8 @@ class MapFeatNearCache(Map):
             request = map_add_near_cache_entry_listener_codec.encode_request(self.name, EntryEventType.invalidation, False)
             self._invalidation_listener_id = self._start_listening(request, handle, handle_decode)
         except:
-            self.logger.severe("-----------------\n Near Cache is not initialized!!! \n-----------------")
+            self.logger.exception("-----------------\n Near Cache is not initialized!!! \n-----------------")
+            raise
 
     def _remove_near_cache_invalidation_listener(self):
         if self._invalidation_listener_id:
