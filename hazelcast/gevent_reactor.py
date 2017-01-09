@@ -4,11 +4,9 @@ import logging
 import socket
 import threading
 import time
-from Queue import PriorityQueue
 
 from hazelcast.connection import Connection, BUFFER_SIZE
 from hazelcast.exception import HazelcastError
-from hazelcast.future import Future
 
 
 class GeventReactor(object):
@@ -17,45 +15,18 @@ class GeventReactor(object):
     logger = logging.getLogger("Reactor")
 
     def __init__(self):
-        self._timers = PriorityQueue()
         self._connections = set()
 
     def start(self):
         self._is_live = True
-        self._thread = gevent.spawn(self._loop)
 
-    def _loop(self):
-        self.logger.debug("Starting Reactor Thread")
-        Future._threading_locals.is_reactor_thread = True  # pylint: disable=W0212
-        while self._is_live:
-            try:
-                self._check_timers()
-                gevent.sleep(0.1)
-            except:
-                self.logger.exception("Error in Reactor Thread")
-                return
-        self.logger.debug("Reactor Thread exited.")
+    @staticmethod
+    def add_timer_absolute(timeout, callback):
+        return gevent.spawn_later(timeout - time.time(), callback)
 
-    def _check_timers(self):
-        now = time.time()
-        while not self._timers.empty():
-            try:
-                _, timer = self._timers.queue[0]
-            except IndexError:
-                return
-
-            if timer.check_timer(now):
-                self._timers.get_nowait()
-            else:
-                return
-
-    def add_timer_absolute(self, timeout, callback):
-        timer = Timer(timeout, callback, self._cleanup_timer)
-        self._timers.put_nowait((timer.end, timer))
-        return timer
-
-    def add_timer(self, delay, callback):
-        return self.add_timer_absolute(delay + time.time(), callback)
+    @staticmethod
+    def add_timer(delay, callback):
+        return gevent.spawn_later(delay, callback)
 
     def shutdown(self):
         for connection in self._connections:
@@ -68,23 +39,17 @@ class GeventReactor(object):
                 else:
                     raise
         self._is_live = False
-        self._thread.join()
 
     def new_connection(self, address, connect_timeout, socket_options, connection_closed_callback, message_callback):
         conn = GeventConnection(address, connect_timeout, socket_options, connection_closed_callback,
-                                  message_callback)
+                                message_callback)
         self._connections.add(conn)
         return conn
-
-    def _cleanup_timer(self, timer):
-        try:
-            self._timers.queue.remove((timer.end, timer))
-        except ValueError:
-            pass
 
 
 class GeventConnection(Connection):
     sent_protocol_bytes = False
+    logger = logging.getLogger("GeventConnection")
 
     def __init__(self, address, connect_timeout, socket_options, connection_closed_callback, message_callback):
         Connection.__init__(self, address, connection_closed_callback, message_callback)
@@ -105,8 +70,8 @@ class GeventConnection(Connection):
         self._socket.connect(self._address)
         self.logger.debug("Connected to %s", self._address)
 
-        # the socket should be non-blocking from now on
-        self._socket.settimeout(0)
+        # Set no timeout as we use seperate greenlets to handle heartbeat timeouts, etc
+        self._socket.settimeout(None)
 
         self.write("CB2")
         self.sent_protocol_bytes = True
@@ -129,8 +94,6 @@ class GeventConnection(Connection):
                     self.close(IOError(e))
                     return
 
-            gevent.sleep(0.1)
-
     def readable(self):
         return not self._closed and self.sent_protocol_bytes
 
@@ -144,24 +107,3 @@ class GeventConnection(Connection):
             self._closed = True
             self._socket.close()
             self._connection_closed_callback(self, cause)
-
-
-class Timer(object):
-    canceled = False
-
-    def __init__(self, end, timer_ended_cb, timer_canceled_cb):
-        self.end = end
-        self.timer_ended_cb = timer_ended_cb
-        self.timer_canceled_cb = timer_canceled_cb
-
-    def cancel(self):
-        self.canceled = True
-        self.timer_canceled_cb(self)
-
-    def check_timer(self, now):
-        if self.canceled:
-            return True
-
-        if now > self.end:
-            self.timer_ended_cb()
-            return True

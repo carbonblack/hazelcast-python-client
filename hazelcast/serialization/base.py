@@ -22,7 +22,7 @@ def handle_exception(e, traceback):
     elif isinstance(e, HazelcastSerializationError):
         raise e, None, traceback
     else:
-        raise HazelcastSerializationError(e.message), None, traceback
+        raise HazelcastSerializationError(str(e)), None, traceback
 
 
 def is_null_data(data):

@@ -39,12 +39,12 @@ class Invocation(object):
 
     def set_response(self, response):
         if self.timer:
-            self.timer.cancel()
+            self.timer.kill()
         self.future.set_result(response)
 
     def set_exception(self, exception, traceback=None):
         if self.timer:
-            self.timer.cancel()
+            self.timer.kill()
         self.future.set_exception(exception, traceback)
 
     def on_timeout(self):
