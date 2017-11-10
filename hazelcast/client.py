@@ -11,6 +11,7 @@ from hazelcast.proxy import ProxyManager, MAP_SERVICE, QUEUE_SERVICE, LIST_SERVI
     ID_GENERATOR_ATOMIC_LONG_PREFIX, \
     EXECUTOR_SERVICE
 from hazelcast.reactor import AsyncoreReactor
+from hazelcast.gevent_reactor import GeventReactor
 from hazelcast.serialization import SerializationServiceV1
 from hazelcast.transaction import TWO_PHASE, TransactionManager
 
@@ -25,7 +26,8 @@ class HazelcastClient(object):
     def __init__(self, config=None):
         self.config = config or ClientConfig()
         self.lifecycle = LifecycleService(self.config)
-        self.reactor = AsyncoreReactor()
+        #self.reactor = AsyncoreReactor()
+        self.reactor = GeventReactor()
         self.connection_manager = ConnectionManager(self, self.reactor.new_connection)
         self.heartbeat = Heartbeat(self)
         self.invoker = InvocationService(self)
