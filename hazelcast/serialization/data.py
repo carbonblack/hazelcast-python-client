@@ -18,6 +18,7 @@ class Data(object):
 
     def __init__(self, buff=None):
         self._buffer = buff
+        self._hash_code = None
 
     def to_bytes(self):
         """
@@ -90,7 +91,10 @@ class Data(object):
 
         :return: the murmur hash of the internal data.
         """
-        return murmur_hash3_x86_32(self._buffer, DATA_OFFSET, self.data_size())
+        if self._hash_code is None:
+            self._hash_code = murmur_hash3_x86_32(self._buffer, DATA_OFFSET, self.data_size())
+
+        return self._hash_code
 
     def __hash__(self):
         return self.hash_code()
