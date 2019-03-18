@@ -1,7 +1,15 @@
 from setuptools import setup, find_packages
 from codecs import open
 from os import path
-from hazelcast import __version__
+
+# Don't import __version__ from hazelcast, it causes gevent to eventually
+# be imported and setup.py to fail if gevent is not installed.
+# This is a hack and means we need to update the version here to be in sync
+# with the one in the __init__.py.
+# from hazelcast import __version__
+__version_info__ = (3, 10)
+__version__ = '.'.join(map(str, __version_info__))
+
 here = path.abspath(path.dirname(__file__))
 
 # Get the long description from the README file
@@ -40,6 +48,6 @@ setup(
         keywords='hazelcast,hazelcast client,In-Memory Data Grid,Distributed Computing',
         packages=find_packages(exclude=[ 'benchmarks', 'examples', 'docs', 'tests', 'tests.*']),
         package_dir={'hazelcast': 'hazelcast'},
-        install_requires=[],
+        install_requires=['gevent'],
         tests_require=['thrift', 'nose', 'coverage'],
 )
