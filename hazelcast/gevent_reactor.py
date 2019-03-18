@@ -33,7 +33,7 @@ class GeventReactor(object):
             try:
                 self.logger.debug("Shutdown connection: %s", str(connection))
                 connection.close(HazelcastError("Client is shutting down"))
-            except OSError, err:
+            except OSError as err:
                 if err.args[0] == socket.EBADF:
                     pass
                 else:
@@ -87,7 +87,7 @@ class GeventConnection(Connection):
                 else:
                     self.close(IOError("Connection closed by server."))
                     return
-            except socket.error, e:
+            except socket.error as e:
                 #if e.args[0] != errno.EAGAIN and e.args[0] != errno.EDEADLK:
                 if e.args[0] != errno.EAGAIN:
                     self.logger.exception("Received error")
