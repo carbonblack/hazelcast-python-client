@@ -9,7 +9,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-        name='hazelcast-python-client',
+        name='cb-hazelcast-python-client',
         version=__version__,
         description='Hazelcast Python Client',
         long_description=long_description,

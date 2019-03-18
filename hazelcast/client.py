@@ -13,6 +13,7 @@ from hazelcast.proxy import ProxyManager, MAP_SERVICE, QUEUE_SERVICE, LIST_SERVI
     ID_GENERATOR_ATOMIC_LONG_PREFIX, \
     EXECUTOR_SERVICE
 from hazelcast.reactor import AsyncoreReactor
+from hazelcast.gevent_reactor import GeventReactor
 from hazelcast.serialization import SerializationServiceV1
 from hazelcast.transaction import TWO_PHASE, TransactionManager
 from hazelcast.util import LockReferenceIdGenerator
@@ -31,7 +32,8 @@ class HazelcastClient(object):
         self.config = config or ClientConfig()
         self.properties = ClientProperties(self.config.get_properties())
         self.lifecycle = LifecycleService(self.config)
-        self.reactor = AsyncoreReactor()
+        #self.reactor = AsyncoreReactor()
+        self.reactor = GeventReactor()
         self._address_providers = self._create_address_providers()
         self._address_translator = self._create_address_translator()
         self.connection_manager = ConnectionManager(self, self.reactor.new_connection, self._address_translator)

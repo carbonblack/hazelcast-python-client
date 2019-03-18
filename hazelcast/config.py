@@ -2,6 +2,7 @@
 Hazelcast Client Configuration module contains configuration classes and various constants required to create a ClientConfig.
 
 """
+import fnmatch
 import os
 
 from hazelcast.serialization.api import StreamSerializer
@@ -171,6 +172,16 @@ class ClientConfig(object):
         """
         self._properties[key] = value
         return self
+
+    def get_near_cache_config(self, name, default=None):
+        near_cache_config = self.near_cache_configs.get(name, default)
+        if near_cache_config is None:
+            # Check for wildcard match
+            for k, v in self.near_cache_configs.iteritems():
+                if fnmatch.fnmatchcase(name, k):
+                    near_cache_config = v
+                    break
+        return near_cache_config
 
 
 class GroupConfig(object):
