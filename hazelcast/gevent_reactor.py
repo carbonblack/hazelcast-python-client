@@ -10,14 +10,20 @@ import socket
 import threading
 import time
 
+from hazelcast.config import PROTOCOL
 from hazelcast.connection import Connection, BUFFER_SIZE
 from hazelcast.exception import HazelcastError
+
+try:
+    import ssl
+except ImportError:
+    ssl = None
 
 
 class GeventReactor(object):
     _thread = None
     _is_live = False
-    logger = logging.getLogger("Reactor")
+    logger = logging.getLogger("HazelcastClient.GeventReactor")
 
     def __init__(self, logger_extras=None):
         self._logger_extras = logger_extras
@@ -46,19 +52,19 @@ class GeventReactor(object):
                     raise
         self._is_live = False
 
-    def new_connection(self, address, connect_timeout, socket_options, connection_closed_callback, message_callback):
+    def new_connection(self, address, connect_timeout, socket_options, connection_closed_callback, message_callback,
+                       network_config):
         conn = GeventConnection(address, connect_timeout, socket_options, connection_closed_callback,
-                                message_callback, self._logger_extras)
+                                message_callback, network_config, self._logger_extras)
         self._connections.add(conn)
         return conn
 
 
 class GeventConnection(Connection):
     sent_protocol_bytes = False
-    logger = logging.getLogger("GeventConnection")
 
     def __init__(self, address, connect_timeout, socket_options, connection_closed_callback,
-                 message_callback, logger_extras=None):
+                 message_callback, network_config, logger_extras=None):
         Connection.__init__(self, address, connection_closed_callback, message_callback, logger_extras)
 
         self._write_lock = threading.Lock()
@@ -75,12 +81,51 @@ class GeventConnection(Connection):
             self._socket.setsockopt(socket_option.level, socket_option.option, socket_option.value)
 
         self._socket.connect(self._address)
-        self.logger.debug("Connected to %s" % self._address, extra=self._logger_extras)
+        self.start_time_in_seconds = time.time()
+        self.logger.debug("Connected to %s", self._address, extra=self._logger_extras)
+
+        ssl_config = network_config.ssl_config
+        if ssl and ssl_config.enabled:
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+
+            protocol = ssl_config.protocol
+
+            # Use only the configured protocol
+            try:
+                if protocol != PROTOCOL.SSLv2:
+                    ssl_context.options |= ssl.OP_NO_SSLv2
+                if protocol != PROTOCOL.SSLv3 and protocol != PROTOCOL.SSL:
+                    ssl_context.options |= ssl.OP_NO_SSLv3
+                if protocol != PROTOCOL.TLSv1:
+                    ssl_context.options |= ssl.OP_NO_TLSv1
+                if protocol != PROTOCOL.TLSv1_1:
+                    ssl_context.options |= ssl.OP_NO_TLSv1_1
+                if protocol != PROTOCOL.TLSv1_2 and protocol != PROTOCOL.TLS:
+                    ssl_context.options |= ssl.OP_NO_TLSv1_2
+                if protocol != PROTOCOL.TLSv1_3:
+                    ssl_context.options |= ssl.OP_NO_TLSv1_3
+            except AttributeError:
+                pass
+
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+
+            if ssl_config.cafile:
+                ssl_context.load_verify_locations(ssl_config.cafile)
+            else:
+                ssl_context.load_default_certs()
+
+            if ssl_config.certfile:
+                ssl_context.load_cert_chain(ssl_config.certfile, ssl_config.keyfile, ssl_config.password)
+
+            if ssl_config.ciphers:
+                ssl_context.set_ciphers(ssl_config.ciphers)
+
+            self._socket = ssl_context.wrap_socket(self._socket)
 
         # Set no timeout as we use seperate greenlets to handle heartbeat timeouts, etc
         self._socket.settimeout(None)
 
-        self.write("CB2")
+        self.write(b"CB2")
         self.sent_protocol_bytes = True
 
         self._read_thread = gevent.spawn(self._read_loop)
@@ -88,8 +133,9 @@ class GeventConnection(Connection):
     def _read_loop(self):
         while not self._closed:
             try:
-                self._read_buffer += self._socket.recv(BUFFER_SIZE)
+                self._read_buffer.extend(self._socket.recv(BUFFER_SIZE))
                 if self._read_buffer:
+                    self.last_read_in_seconds = time.time()
                     self.receive_message()
                 else:
                     self.close(IOError("Connection closed by server."))
@@ -108,6 +154,7 @@ class GeventConnection(Connection):
         # if write queue is empty, send the data right away, otherwise add to queue
         with self._write_lock:
             self._socket.sendall(data)
+            self.last_write_in_seconds = time.time()
 
     def close(self, cause):
         if not self._closed:
