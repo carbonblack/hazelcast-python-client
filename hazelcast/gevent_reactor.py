@@ -62,6 +62,7 @@ class GeventReactor(object):
 
 class GeventConnection(Connection):
     sent_protocol_bytes = False
+    read_buffer_size = BUFFER_SIZE
 
     def __init__(self, address, connect_timeout, socket_options, connection_closed_callback,
                  message_callback, network_config, logger_extras=None):
@@ -78,6 +79,9 @@ class GeventConnection(Connection):
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFFER_SIZE)
 
         for socket_option in socket_options:
+            if socket_option.option is socket.SO_RCVBUF:
+                self.read_buffer_size = socket_option.value
+
             self._socket.setsockopt(socket_option.level, socket_option.option, socket_option.value)
 
         self._socket.connect(self._address)
@@ -133,7 +137,7 @@ class GeventConnection(Connection):
     def _read_loop(self):
         while not self._closed:
             try:
-                self._read_buffer.extend(self._socket.recv(BUFFER_SIZE))
+                self._read_buffer.extend(self._socket.recv(self.read_buffer_size))
                 if self._read_buffer:
                     self.last_read_in_seconds = time.time()
                     self.receive_message()
