@@ -199,7 +199,7 @@ class ClientConfig(object):
         near_cache_config = self.near_cache_configs.get(name, default)
         if near_cache_config is None:
             # Check for wildcard match
-            for k, v in self.near_cache_configs.iteritems():
+            for k, v in self.near_cache_configs.items():
                 if fnmatch.fnmatchcase(name, k):
                     near_cache_config = v
                     break
