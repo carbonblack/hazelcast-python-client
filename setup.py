@@ -24,7 +24,7 @@ extras = {
 }
 
 setup(
-        name='hazelcast-python-client',
+        name='cb-hazelcast-python-client',
         version=__version__,
         description='Hazelcast Python Client',
         long_description=long_description,
@@ -56,7 +56,7 @@ setup(
         packages=find_packages(exclude=['benchmarks', 'examples', 'examples.*', 'docs', 'tests', 'tests.*']),
         package_dir={'hazelcast': 'hazelcast'},
         package_data={'hazelcast': ["git_info.json"]},
-        install_requires=[],
+        install_requires=['gevent'],
         extras_require=extras,
         tests_require=['thrift', 'nose', 'coverage', 'psutil'],
 )
