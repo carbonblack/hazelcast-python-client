@@ -37,7 +37,7 @@ class PartitionService(object):
         Shutdowns the partition service.
         """
         if self.timer:
-            self.timer.kill()
+            self.timer.cancel()
 
     def refresh(self):
         """
