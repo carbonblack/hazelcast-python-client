@@ -21,6 +21,29 @@ except ImportError:
     ssl = None
 
 
+class GeventTimer(object):
+    def __init__(self, delay, callback):
+        self._greenlet = None
+        self._callback = callback
+        self._delay = delay
+    
+    def _on_callback(self):
+        self._greenlet = None
+        if self._callback:
+            self._callback()
+    
+    def start(self):
+        if self._greenlet:
+            return
+        self._greenlet = gevent.spawn_later(self._delay, self._on_callback)
+    
+    def cancel(self):
+        if not self._greenlet:
+            return
+        self._greenlet.kill()
+        self._greenlet = None
+    
+
 class GeventReactor(object):
     _thread = None
     _is_live = False
@@ -39,7 +62,7 @@ class GeventReactor(object):
 
     @staticmethod
     def add_timer(delay, callback):
-        timer = gevent.threading.Timer(delay, callback)
+        timer = GeventTimer(delay, callback)
         timer.start()
         return timer
 
