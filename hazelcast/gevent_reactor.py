@@ -4,6 +4,7 @@ except ImportError:
     # Don't fail if we can't import gevent, setup.py ends up pulling in this module and we don't want
     # The bdist_wheel command to fail. If gevent is really missing we'll know soon enough after starting up.
     pass
+
 import errno
 import logging
 import socket
@@ -20,6 +21,29 @@ except ImportError:
     ssl = None
 
 
+class GeventTimer(object):
+    def __init__(self, delay, callback):
+        self._greenlet = None
+        self._callback = callback
+        self._delay = delay
+    
+    def _on_callback(self):
+        self._greenlet = None
+        if self._callback:
+            self._callback()
+    
+    def start(self):
+        if self._greenlet:
+            return
+        self._greenlet = gevent.spawn_later(self._delay, self._on_callback)
+    
+    def cancel(self):
+        if not self._greenlet:
+            return
+        self._greenlet.kill()
+        self._greenlet = None
+    
+
 class GeventReactor(object):
     _thread = None
     _is_live = False
@@ -34,11 +58,13 @@ class GeventReactor(object):
 
     @staticmethod
     def add_timer_absolute(timeout, callback):
-        return gevent.spawn_later(timeout - time.time(), callback)
+        return GeventReactor.add_timer(timeout - time.time(), callback)
 
     @staticmethod
     def add_timer(delay, callback):
-        return gevent.spawn_later(delay, callback)
+        timer = GeventTimer(delay, callback)
+        timer.start()
+        return timer
 
     def shutdown(self):
         for connection in self._connections:
@@ -137,15 +163,15 @@ class GeventConnection(Connection):
     def _read_loop(self):
         while not self._closed:
             try:
-                self._read_buffer.extend(self._socket.recv(self.read_buffer_size))
-                if self._read_buffer:
+                new_data = self._socket.recv(self.read_buffer_size)
+                if new_data:
+                    self._read_buffer.extend(new_data)
                     self.last_read_in_seconds = time.time()
                     self.receive_message()
                 else:
                     self.close(IOError("Connection closed by server."))
                     return
             except socket.error as e:
-                #if e.args[0] != errno.EAGAIN and e.args[0] != errno.EDEADLK:
                 if e.args[0] != errno.EAGAIN:
                     self.logger.exception("Received error", extra=self._logger_extras)
                     self.close(IOError(e))

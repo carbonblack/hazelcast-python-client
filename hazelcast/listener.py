@@ -49,7 +49,7 @@ class ListenerService(object):
             if last_exception is None:
                 break
             self.time_out_or_sleep_before_next_try(start_millis, last_failed_member, last_exception)
-            if not self._client.lifecycle.is_live():
+            if not self._client.lifecycle.is_live:
                 break
 
     def time_out_or_sleep_before_next_try(self, start_millis, last_failed_member, last_exception):
