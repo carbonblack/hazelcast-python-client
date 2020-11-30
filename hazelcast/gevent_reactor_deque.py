@@ -11,6 +11,7 @@ import socket
 import threading
 import time
 
+from collections import deque
 from hazelcast.config import PROTOCOL
 from hazelcast.connection import Connection, BUFFER_SIZE
 from hazelcast.exception import HazelcastError
@@ -95,8 +96,8 @@ class GeventConnection(Connection):
         Connection.__init__(self, address, connection_closed_callback, message_callback, logger_extras)
 
         self._write_lock = threading.Lock()
-        self._write_queue = gevent.queue.Queue()
-        self._write_queue.put(b"CB2")
+        self._write_queue = deque()
+        self._write_queue.append(b"CB2")
         self._socket = None
         self._close_cause = None
         self._read_thread = None
@@ -120,7 +121,12 @@ class GeventConnection(Connection):
 
             self._socket.setsockopt(socket_option.level, socket_option.option, socket_option.value)
 
-        self._socket.connect(self._address)
+        try:
+            self._socket.connect(self._address)
+        except ConnectionError as e:
+            self._connection_closed_callback(self, IOError(e))
+            return
+            
         self.start_time_in_seconds = time.time()
         self.logger.debug("Connected to %s", self._address, extra=self._logger_extras)
 
@@ -198,19 +204,25 @@ class GeventConnection(Connection):
             if self._closed_socket():
                 return
             
-            for data in self._write_queue:
+            while self._write_queue:
                 try:
+                    data = self._write_queue.popleft()
+                    self.logger.error(">>> WRITE LOOP WRITING DATA...")
                     while len(data):
                         sent = self._socket.send(data)
                         data = data[sent:]
                     self.last_write_in_seconds = time.time()
                     self.sent_protocol_bytes = True
+                except IndexError:
+                    pass
                 except (socket.error, ConnectionError) as e:
                     self.logger.exception('Send error', extra=self._logger_extras)
                     self._close_cause = IOError(e)
                     self._closed_socket()
                     return
+            self.logger.error("--- WRITE LOOP ENTERING WAIT...")
             self._write_event.wait(timeout=1)
+            self.logger.error("+++ WRITE LOOP LEAVING WAIT.")
     
     def _closed_socket(self):
         if self._closed:
@@ -226,7 +238,7 @@ class GeventConnection(Connection):
         return not self._closed and self.sent_protocol_bytes
     
     def write(self, data):
-        self._write_queue.put(data)
+        self._write_queue.append(data)
         self._write_event.set()
 
     def close(self, cause):
