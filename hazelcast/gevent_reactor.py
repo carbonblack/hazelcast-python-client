@@ -95,6 +95,16 @@ class GeventConnection(Connection):
         Connection.__init__(self, address, connection_closed_callback, message_callback, logger_extras)
 
         self._write_lock = threading.Lock()
+        self._write_queue = gevent.queue.Queue()
+        self._write_queue.put(b"CB2")
+        self._socket = None
+        self._close_cause = None
+        self._read_thread = None
+        self._write_event = gevent.event.Event()
+
+        self._writer_thread = gevent.spawn(self._connect, connect_timeout, socket_options, network_config)
+
+    def _connect(self, connect_timeout, socket_options, network_config):
         self._socket = gevent.socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.settimeout(connect_timeout)
 
@@ -154,11 +164,10 @@ class GeventConnection(Connection):
 
         # Set no timeout as we use seperate greenlets to handle heartbeat timeouts, etc
         self._socket.settimeout(None)
-
-        self.write(b"CB2")
         self.sent_protocol_bytes = True
 
         self._read_thread = gevent.spawn(self._read_loop)
+        self._write_loop()
 
     def _read_loop(self):
         while not self._closed:
@@ -168,6 +177,8 @@ class GeventConnection(Connection):
                     self._read_buffer.extend(new_data)
                     self.last_read_in_seconds = time.time()
                     self.receive_message()
+                elif self._closed:
+                    self.logger.info('Aborting read, connection is closed.')
                 else:
                     self.close(IOError("Connection closed by server."))
                     return
@@ -176,18 +187,49 @@ class GeventConnection(Connection):
                     self.logger.exception("Received error", extra=self._logger_extras)
                     self.close(IOError(e))
                     return
+            except (ConnectionError, gevent._socketcommon.cancel_wait_ex) as e:
+                self.logger.exception("Received error", extra=self._logger_extras)
+                self.close(IOError(e))
+                return
+
+    def _write_loop(self):
+        while not self._closed:
+            self._write_event.clear()
+            if self._closed_socket():
+                return
+            
+            for data in self._write_queue:
+                try:
+                    while len(data):
+                        sent = self._socket.send(data)
+                        data = data[sent:]
+                    self.last_write_in_seconds = time.time()
+                    self.sent_protocol_bytes = True
+                except (socket.error, ConnectionError) as e:
+                    self.logger.exception('Send error', extra=self._logger_extras)
+                    self._close_cause = IOError(e)
+                    self._closed_socket()
+                    return
+            self._write_event.wait(timeout=1)
+    
+    def _closed_socket(self):
+        if self._closed:
+            return True
+        if self._close_cause:
+            self._closed = True
+            self._socket.close()
+            self._connection_closed_callback(self, self._close_cause)
+            return True
+        return False
 
     def readable(self):
         return not self._closed and self.sent_protocol_bytes
-
+    
     def write(self, data):
-        # if write queue is empty, send the data right away, otherwise add to queue
-        with self._write_lock:
-            self._socket.sendall(data)
-            self.last_write_in_seconds = time.time()
+        self._write_queue.put(data)
+        self._write_event.set()
 
     def close(self, cause):
         if not self._closed:
-            self._closed = True
-            self._socket.close()
-            self._connection_closed_callback(self, cause)
+            self._close_cause = cause
+            self._write_event.set()
